@@ -19,8 +19,13 @@ st.title("NIFTY + ATM CALL & PUT PRICE CROSSOVER")
 
 # Try to get access token from environment variables or Streamlit secrets
 ACCESS_TOKEN = os.getenv("UPSTOX_ACCESS_TOKEN")
-if not ACCESS_TOKEN and "UPSTOX_ACCESS_TOKEN" in st.secrets:
-    ACCESS_TOKEN = st.secrets["UPSTOX_ACCESS_TOKEN"]
+if not ACCESS_TOKEN:
+    try:
+        if "UPSTOX_ACCESS_TOKEN" in st.secrets:
+            ACCESS_TOKEN = st.secrets["UPSTOX_ACCESS_TOKEN"]
+    except Exception:
+        # st.secrets raises StreamlitSecretNotFoundError if no secrets file/env exists
+        pass
 
 # Fallback: allow user to input token in Streamlit sidebar
 if not ACCESS_TOKEN:
