@@ -1,0 +1,7 @@
+streamlit
+plotly
+pandas
+requests
+curl_cffi
+matplotlib
+python-dotenv
