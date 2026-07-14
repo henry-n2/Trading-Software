@@ -83,3 +83,24 @@ This runs a persistent tracking window showing the live crossover graph using Ma
 python test_api.py
 ```
 A quick sanity test script to check if your Upstox credentials and connection are working correctly.
+
+---
+
+## Deploying to Streamlit Community Cloud
+
+You can host the **`app.py`** dashboard for free on [Streamlit Community Cloud](https://streamlit.io/cloud).
+
+### Steps to Deploy:
+1. Push this repository to your GitHub account.
+2. Log in to [Streamlit Community Cloud](https://share.streamlit.io/) and click **New App**.
+3. Select your repository, branch, and set the Main file path to `app.py`.
+4. Click **Advanced settings...** before deploying.
+5. In the **Secrets** section, add your daily token:
+   ```toml
+   UPSTOX_ACCESS_TOKEN = "your_actual_upstox_access_token"
+   ```
+6. Click **Save** and **Deploy**. Streamlit Cloud will install the dependencies from `requirements.txt` and run your dashboard.
+
+### Local Streamlit Secrets (Alternative to `.env`)
+Streamlit also supports a local secrets file. You can copy the template `.streamlit/secrets.toml.example` to `.streamlit/secrets.toml` and fill in the token. Streamlit will automatically make it available under `st.secrets`.
+

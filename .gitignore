@@ -6,6 +6,7 @@ env/
 
 # Environment variables / secrets
 .env
+.streamlit/secrets.toml
 
 # Python caching
 __pycache__/
