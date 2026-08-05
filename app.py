@@ -445,7 +445,7 @@ if not df.empty:
         fig_nifty = go.Figure()
         fig_nifty.add_trace(
             go.Scatter(
-                x=df['Datetime'], 
+                x=df['Datetime'].tolist(), 
                 y=df['Nifty_Spot'], 
                 name="NIFTY 50", 
                 line=dict(color='#F4D03F', width=2),
@@ -458,16 +458,16 @@ if not df.empty:
         # Add horizontal dashed line at latest spot price (Kite style)
         fig_nifty.add_shape(
             type="line",
-            x0=df['Datetime'].iloc[0],
+            x0=df['Datetime'].iloc[0].to_pydatetime(),
             y0=live_spot,
-            x1=df['Datetime'].iloc[-1],
+            x1=df['Datetime'].iloc[-1].to_pydatetime(),
             y1=live_spot,
             line=dict(color='#F4D03F', width=1.5, dash="dash"),
         )
         
         # Add price badge on the right margin (Kite style)
         fig_nifty.add_annotation(
-            x=df['Datetime'].iloc[-1],
+            x=df['Datetime'].iloc[-1].to_pydatetime(),
             y=live_spot,
             text=f"{live_spot:,.2f}",
             showarrow=False,
@@ -524,7 +524,7 @@ if not df.empty:
             'displaylogo': False,
             'modeBarButtonsToAdd': ['drawline', 'drawrect', 'eraseshape']
         }
-        st.plotly_chart(fig_nifty, use_container_width=True, config=plotly_config, key="nifty_spot_chart")
+        st.plotly_chart(fig_nifty, width='stretch', config=plotly_config, key="nifty_spot_chart")
         
     # --- RIGHT SIDE: Option Premium Crossover ---
     with col2:
@@ -557,7 +557,7 @@ if not df.empty:
         fig_options = go.Figure()
         fig_options.add_trace(
             go.Scatter(
-                x=df['Datetime'], 
+                x=df['Datetime'].tolist(), 
                 y=df['ATM_CE'], 
                 name="ATM CALL (CE)", 
                 line=dict(color='#2ECC71', width=2),
@@ -568,7 +568,7 @@ if not df.empty:
         )
         fig_options.add_trace(
             go.Scatter(
-                x=df['Datetime'], 
+                x=df['Datetime'].tolist(), 
                 y=df['ATM_PE'], 
                 name="ATM PUT (PE)", 
                 line=dict(color='#E74C3C', width=2),
@@ -581,16 +581,16 @@ if not df.empty:
         # Add horizontal dashed line at latest Call price
         fig_options.add_shape(
             type="line",
-            x0=df['Datetime'].iloc[0],
+            x0=df['Datetime'].iloc[0].to_pydatetime(),
             y0=live_ce,
-            x1=df['Datetime'].iloc[-1],
+            x1=df['Datetime'].iloc[-1].to_pydatetime(),
             y1=live_ce,
             line=dict(color='#2ECC71', width=1.5, dash="dash"),
         )
         
         # Add Call price badge on the right margin
         fig_options.add_annotation(
-            x=df['Datetime'].iloc[-1],
+            x=df['Datetime'].iloc[-1].to_pydatetime(),
             y=live_ce,
             text=f"CE: {live_ce:,.2f}",
             showarrow=False,
@@ -607,16 +607,16 @@ if not df.empty:
         # Add horizontal dashed line at latest Put price
         fig_options.add_shape(
             type="line",
-            x0=df['Datetime'].iloc[0],
+            x0=df['Datetime'].iloc[0].to_pydatetime(),
             y0=live_pe,
-            x1=df['Datetime'].iloc[-1],
+            x1=df['Datetime'].iloc[-1].to_pydatetime(),
             y1=live_pe,
             line=dict(color='#E74C3C', width=1.5, dash="dash"),
         )
         
         # Add Put price badge on the right margin
         fig_options.add_annotation(
-            x=df['Datetime'].iloc[-1],
+            x=df['Datetime'].iloc[-1].to_pydatetime(),
             y=live_pe,
             text=f"PE: {live_pe:,.2f}",
             showarrow=False,
@@ -676,7 +676,7 @@ if not df.empty:
             height=450
         )
         
-        st.plotly_chart(fig_options, use_container_width=True, config=plotly_config, key="options_crossover_chart")
+        st.plotly_chart(fig_options, width='stretch', config=plotly_config, key="options_crossover_chart")
 else:
     st.markdown(
         """
