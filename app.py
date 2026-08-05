@@ -11,6 +11,32 @@ from dotenv import load_dotenv
 # Load environment variables
 load_dotenv()
 
+# --- CONFIGURATION RESOLVER ---
+def load_config_value(key_name):
+    try:
+        if key_name in st.secrets:
+            val = st.secrets[key_name]
+            if val and val.strip():
+                return val.strip()
+    except Exception:
+        pass
+    val = os.getenv(key_name)
+    if val and val.strip():
+        return val.strip()
+    load_dotenv()
+    val = os.getenv(key_name)
+    if val and val.strip():
+        return val.strip()
+    if os.path.exists(".env.example"):
+        load_dotenv(".env.example")
+        val = os.getenv(key_name)
+        if val and val.strip():
+            return val.strip()
+    return None
+
+GSHEET_WEBAPP_URL = load_config_value("GSHEET_WEBAPP_URL")
+GSHEET_EXPORT_URL = load_config_value("GSHEET_EXPORT_URL")
+
 # --- CONFIGURATION ---
 st.set_page_config(layout="wide", page_title="NIFTY Live Crossover")
 
@@ -102,14 +128,26 @@ class BackgroundState:
         self.latest_ce = 0.0
         self.latest_pe = 0.0
         
-        # Load existing history from disk if available
-        if os.path.exists(DATA_FILE):
+        # Load existing history from Google Sheets (fallback to local CSV backup)
+        loaded = False
+        if GSHEET_EXPORT_URL:
             try:
-                self.df = pd.read_csv(DATA_FILE).tail(3600)
-                print(f"Loaded {len(self.df)} historical points from disk.")
-            except Exception:
-                self.df = pd.DataFrame(columns=['Time', 'Nifty_Spot', 'ATM_CE', 'ATM_PE'])
-        else:
+                self.df = pd.read_csv(GSHEET_EXPORT_URL).tail(3600)
+                print(f"Loaded {len(self.df)} historical points from Google Sheets.")
+                loaded = True
+            except Exception as e:
+                print(f"Failed to load from Google Sheets: {e}")
+                
+        if not loaded:
+            if os.path.exists(DATA_FILE):
+                try:
+                    self.df = pd.read_csv(DATA_FILE).tail(3600)
+                    print(f"Loaded {len(self.df)} historical points from local CSV backup.")
+                    loaded = True
+                except Exception:
+                    pass
+                    
+        if not loaded:
             self.df = pd.DataFrame(columns=['Time', 'Nifty_Spot', 'ATM_CE', 'ATM_PE'])
 
 @st.cache_resource
@@ -117,37 +155,7 @@ def get_shared_state_v2():
     return BackgroundState()
 
 # --- TOKEN RESOLVER ---
-def load_access_token():
-    # 1. Streamlit secrets
-    try:
-        if "UPSTOX_ACCESS_TOKEN" in st.secrets:
-            token = st.secrets["UPSTOX_ACCESS_TOKEN"]
-            if token and token.strip():
-                return token.strip()
-    except Exception:
-        pass
-        
-    # 2. Process Environment Variable
-    token = os.getenv("UPSTOX_ACCESS_TOKEN")
-    if token and token.strip():
-        return token.strip()
-        
-    # 3. .env file
-    load_dotenv()
-    token = os.getenv("UPSTOX_ACCESS_TOKEN")
-    if token and token.strip():
-        return token.strip()
-        
-    # 4. .env.example file (as fallback helper for local developer setup)
-    if os.path.exists(".env.example"):
-        load_dotenv(".env.example")
-        token = os.getenv("UPSTOX_ACCESS_TOKEN")
-        if token and token.strip():
-            return token.strip()
-            
-    return None
-
-ACCESS_TOKEN = load_access_token()
+ACCESS_TOKEN = load_config_value("UPSTOX_ACCESS_TOKEN")
 if not ACCESS_TOKEN:
     st.error("❌ Access Token not found! Please set `UPSTOX_ACCESS_TOKEN` in Streamlit secrets, or in a local `.env` or `.env.example` file.")
     st.stop()
@@ -279,6 +287,7 @@ def background_worker(token):
     expiry = None
     
     last_csv_write_time = time.time()
+    pending_rows = []
     
     while True:
         try:
@@ -314,21 +323,41 @@ def background_worker(token):
                         state.latest_ce = ce_price
                         state.latest_pe = pe_price
                         
-                        new_row = pd.DataFrame({
-                            'Time': [current_time], 
-                            'Nifty_Spot': [spot_price], 
-                            'ATM_CE': [ce_price], 
-                            'ATM_PE': [pe_price]
-                        })
+                        new_row_dict = {
+                            'Time': current_time, 
+                            'Nifty_Spot': spot_price, 
+                            'ATM_CE': ce_price, 
+                            'ATM_PE': pe_price
+                        }
+                        pending_rows.append(new_row_dict)
+                        
+                        new_row_df = pd.DataFrame([new_row_dict])
                         
                         # Append to memory DataFrame, capped to last 3600 seconds (1 hour of detailed tick data)
-                        state.df = pd.concat([state.df, new_row], ignore_index=True).tail(3600)
+                        state.df = pd.concat([state.df, new_row_df], ignore_index=True).tail(3600)
                         
-                        # Periodic backup to market_data.csv every 10 seconds to limit disk writes
+                        # Periodic write to Google Sheets and local backup every 10 seconds
                         now = time.time()
                         if now - last_csv_write_time >= 10:
+                            if GSHEET_WEBAPP_URL:
+                                if pending_rows:
+                                    try:
+                                        response = requests.post(GSHEET_WEBAPP_URL, json=pending_rows, timeout=8)
+                                        if response.status_code == 200:
+                                            print(f"[{datetime.now().strftime('%H:%M:%S')}] Saved {len(pending_rows)} points to Google Sheets.")
+                                            pending_rows.clear()
+                                        else:
+                                            print(f"[{datetime.now().strftime('%H:%M:%S')}] Google Sheets Save Error: HTTP {response.status_code} - {response.text}")
+                                    except Exception as e:
+                                        print(f"[{datetime.now().strftime('%H:%M:%S')}] Google Sheets Connection Error: {e}")
+                            else:
+                                pending_rows.clear()
+                                
                             with db_lock:
-                                state.df.to_csv(DATA_FILE, index=False)
+                                try:
+                                    state.df.to_csv(DATA_FILE, index=False)
+                                except Exception as e:
+                                    print(f"[{datetime.now().strftime('%H:%M:%S')}] Backup Save Error: {e}")
                             last_csv_write_time = now
                             
                             # Flat price check (120 consecutive 1-second points = closed / halted)
