@@ -17,21 +17,21 @@ def load_config_value(key_name):
         if key_name in st.secrets:
             val = st.secrets[key_name]
             if val and val.strip():
-                return val.strip()
+                return val.strip().strip('"').strip("'")
     except Exception:
         pass
     val = os.getenv(key_name)
     if val and val.strip():
-        return val.strip()
+        return val.strip().strip('"').strip("'")
     load_dotenv()
     val = os.getenv(key_name)
     if val and val.strip():
-        return val.strip()
+        return val.strip().strip('"').strip("'")
     if os.path.exists(".env.example"):
         load_dotenv(".env.example")
         val = os.getenv(key_name)
         if val and val.strip():
-            return val.strip()
+            return val.strip().strip('"').strip("'")
     return None
 
 GSHEET_WEBAPP_URL = load_config_value("GSHEET_WEBAPP_URL")
