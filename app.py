@@ -562,6 +562,7 @@ if not df.empty:
             paper_bgcolor='#0d0f12',
             font=dict(family='Inter, sans-serif', color='#e2e8f0'),
             dragmode='pan',
+            uirevision='nifty_spot',
             xaxis=dict(
                 title="Time",
                 type='date',
@@ -711,6 +712,7 @@ if not df.empty:
             paper_bgcolor='#0d0f12',
             font=dict(family='Inter, sans-serif', color='#e2e8f0'),
             dragmode='pan',
+            uirevision='options_crossover',
             xaxis=dict(
                 title="Time",
                 type='date',
