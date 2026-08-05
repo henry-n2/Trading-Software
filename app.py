@@ -450,6 +450,8 @@ if not df.empty:
     today_str = datetime.now().strftime("%Y-%m-%d")
     df['Datetime'] = pd.to_datetime(today_str + ' ' + df['Time'], errors='coerce')
     df = df.dropna(subset=['Datetime'])
+    # Convert to standard space-separated string format YYYY-MM-DD HH:MM:SS for robust Plotly JS date-axis parsing
+    df['Datetime_Str'] = df['Datetime'].dt.strftime('%Y-%m-%d %H:%M:%S')
     
     col1, col2 = st.columns(2)
     
@@ -474,7 +476,7 @@ if not df.empty:
         fig_nifty = go.Figure()
         fig_nifty.add_trace(
             go.Scatter(
-                x=df['Datetime'].tolist(), 
+                x=df['Datetime_Str'].tolist(), 
                 y=df['Nifty_Spot'], 
                 name="NIFTY 50", 
                 line=dict(color='#F4D03F', width=2),
@@ -487,16 +489,16 @@ if not df.empty:
         # Add horizontal dashed line at latest spot price (Kite style)
         fig_nifty.add_shape(
             type="line",
-            x0=df['Datetime'].iloc[0].to_pydatetime(),
+            x0=df['Datetime_Str'].iloc[0],
             y0=live_spot,
-            x1=df['Datetime'].iloc[-1].to_pydatetime(),
+            x1=df['Datetime_Str'].iloc[-1],
             y1=live_spot,
             line=dict(color='#F4D03F', width=1.5, dash="dash"),
         )
         
         # Add price badge on the right margin (Kite style)
         fig_nifty.add_annotation(
-            x=df['Datetime'].iloc[-1].to_pydatetime(),
+            x=df['Datetime_Str'].iloc[-1],
             y=live_spot,
             text=f"{live_spot:,.2f}",
             showarrow=False,
@@ -586,7 +588,7 @@ if not df.empty:
         fig_options = go.Figure()
         fig_options.add_trace(
             go.Scatter(
-                x=df['Datetime'].tolist(), 
+                x=df['Datetime_Str'].tolist(), 
                 y=df['ATM_CE'], 
                 name="ATM CALL (CE)", 
                 line=dict(color='#2ECC71', width=2),
@@ -597,7 +599,7 @@ if not df.empty:
         )
         fig_options.add_trace(
             go.Scatter(
-                x=df['Datetime'].tolist(), 
+                x=df['Datetime_Str'].tolist(), 
                 y=df['ATM_PE'], 
                 name="ATM PUT (PE)", 
                 line=dict(color='#E74C3C', width=2),
@@ -610,16 +612,16 @@ if not df.empty:
         # Add horizontal dashed line at latest Call price
         fig_options.add_shape(
             type="line",
-            x0=df['Datetime'].iloc[0].to_pydatetime(),
+            x0=df['Datetime_Str'].iloc[0],
             y0=live_ce,
-            x1=df['Datetime'].iloc[-1].to_pydatetime(),
+            x1=df['Datetime_Str'].iloc[-1],
             y1=live_ce,
             line=dict(color='#2ECC71', width=1.5, dash="dash"),
         )
         
         # Add Call price badge on the right margin
         fig_options.add_annotation(
-            x=df['Datetime'].iloc[-1].to_pydatetime(),
+            x=df['Datetime_Str'].iloc[-1],
             y=live_ce,
             text=f"CE: {live_ce:,.2f}",
             showarrow=False,
@@ -636,16 +638,16 @@ if not df.empty:
         # Add horizontal dashed line at latest Put price
         fig_options.add_shape(
             type="line",
-            x0=df['Datetime'].iloc[0].to_pydatetime(),
+            x0=df['Datetime_Str'].iloc[0],
             y0=live_pe,
-            x1=df['Datetime'].iloc[-1].to_pydatetime(),
+            x1=df['Datetime_Str'].iloc[-1],
             y1=live_pe,
             line=dict(color='#E74C3C', width=1.5, dash="dash"),
         )
         
         # Add Put price badge on the right margin
         fig_options.add_annotation(
-            x=df['Datetime'].iloc[-1].to_pydatetime(),
+            x=df['Datetime_Str'].iloc[-1],
             y=live_pe,
             text=f"PE: {live_pe:,.2f}",
             showarrow=False,
