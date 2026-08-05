@@ -428,7 +428,7 @@ state = get_shared_state_v2()
 df = state.df.copy()
 
 pause_refresh = False
-refresh_interval = 3
+refresh_interval = 180 # 3 minutes default
 
 # Render sidebar connection state with live prices
 with st.sidebar:
@@ -482,16 +482,17 @@ with st.sidebar:
             help="Pause auto-refreshing so you can draw trendlines, rectangles, pan, or zoom without resets. Background data logging remains active."
         )
         if not pause_refresh:
-            refresh_interval = st.slider(
-                "Refresh Interval (s)", 
+            refresh_interval_min = st.slider(
+                "Refresh Interval (minutes)", 
                 min_value=1, 
-                max_value=20, 
+                max_value=10, 
                 value=3, 
                 step=1,
                 help="Set how frequently the page pulls the latest ticks."
             )
+            refresh_interval = refresh_interval_min * 60
         else:
-            refresh_interval = 3
+            refresh_interval = 180
 
 plotly_config = {
     'scrollZoom': True,
@@ -572,7 +573,7 @@ def render_plots(df, state):
                 paper_bgcolor='#0d0f12',
                 font=dict(family='Inter, sans-serif', color='#e2e8f0'),
                 dragmode='pan',
-                uirevision='nifty_spot',
+                uirevision=True,
                 xaxis=dict(
                     title="Time",
                     type='date',
@@ -605,7 +606,7 @@ def render_plots(df, state):
                 height=450
             )
             
-            st.plotly_chart(fig_nifty, width='stretch', config=plotly_config, key="nifty_spot_chart")
+            st.plotly_chart(fig_nifty, width='stretch', config=plotly_config, key="nifty_spot_chart", theme=None)
             
         # --- RIGHT SIDE: Option Premium Crossover ---
         with col2:
@@ -716,7 +717,7 @@ def render_plots(df, state):
                 paper_bgcolor='#0d0f12',
                 font=dict(family='Inter, sans-serif', color='#e2e8f0'),
                 dragmode='pan',
-                uirevision='options_crossover',
+                uirevision=True,
                 xaxis=dict(
                     title="Time",
                     type='date',
@@ -757,7 +758,7 @@ def render_plots(df, state):
                 height=450
             )
             
-            st.plotly_chart(fig_options, width='stretch', config=plotly_config, key="options_crossover_chart")
+            st.plotly_chart(fig_options, width='stretch', config=plotly_config, key="options_crossover_chart", theme=None)
     else:
         st.markdown(
             """
@@ -777,7 +778,7 @@ def render_plots(df, state):
 # --- RUN RENDERING PROCESS ---
 if hasattr(st, "fragment"):
     # Streamlit 1.33+ Fragment: Only re-renders this function context, keeping sidebar fully static
-    @st.fragment(run_every=refresh_interval)
+    @st.fragment
     def run_dashboard_fragment():
         state = get_shared_state_v2()
         df = state.df.copy()
@@ -796,6 +797,10 @@ if hasattr(st, "fragment"):
                 
         render_plots(df, state)
         
+        if not pause_refresh:
+            time.sleep(refresh_interval)
+            st.rerun()
+            
     run_dashboard_fragment()
 else:
     # Safe Fallback to standard sleep-rerun loop to prevent Duplicate Key Errors
