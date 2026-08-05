@@ -327,7 +327,7 @@ def background_worker(token):
                 time.sleep(1) 
                 continue
             
-            current_time = datetime.now().strftime("%H:%M:%S")
+            current_time = get_ist_now().strftime("%H:%M:%S")
             spot_price = get_spot_price(token)
             
             if spot_price:
@@ -491,7 +491,7 @@ with st.sidebar:
 # Render dashboard charts and metrics
 if not df.empty:
     # Convert Time column to datetime and clean NaTs to enable Plotly datetime axis auto-scaling
-    today_str = datetime.now().strftime("%Y-%m-%d")
+    today_str = get_ist_now().strftime("%Y-%m-%d")
     df['Datetime'] = pd.to_datetime(today_str + ' ' + df['Time'], errors='coerce')
     df = df.dropna(subset=['Datetime'])
     # Convert to standard space-separated string format YYYY-MM-DD HH:MM:SS for robust Plotly JS date-axis parsing
