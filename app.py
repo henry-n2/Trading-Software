@@ -524,8 +524,6 @@ if not df.empty:
                 y=df['Nifty_Spot'], 
                 name="NIFTY 50", 
                 line=dict(color='#F4D03F', width=2),
-                fill='tozeroy',
-                fillcolor='rgba(244, 208, 63, 0.04)',
                 mode='lines'
             )
         )
