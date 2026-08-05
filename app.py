@@ -425,6 +425,9 @@ start_background_collector(ACCESS_TOKEN)
 state = get_shared_state_v2()
 df = state.df.copy()
 
+pause_refresh = False
+refresh_interval = 3
+
 # Render sidebar connection state with live prices
 with st.sidebar:
     if state.error:
