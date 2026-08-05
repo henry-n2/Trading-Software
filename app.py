@@ -97,6 +97,32 @@ st.markdown(
         margin-bottom: 25px;
         box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
     }
+    /* Style Plotly ModeBar controls toolbar */
+    .modebar-container {
+        top: 5px !important;
+        left: 50% !important;
+        right: auto !important;
+        transform: translateX(-50%) !important;
+        background: #141822 !important;
+        border: 1px solid #1e2433 !important;
+        border-radius: 6px !important;
+        padding: 3px 6px !important;
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4) !important;
+    }
+    
+    .modebar-btn svg {
+        transform: scale(1.35) !important;
+        fill: #94a3b8 !important;
+    }
+    
+    .modebar-btn:hover svg {
+        fill: #F4D03F !important;
+    }
+    
+    .modebar-btn {
+        padding: 4px 6px !important;
+        margin: 0 2px !important;
+    }
     </style>
     """,
     unsafe_allow_html=True
@@ -113,7 +139,6 @@ st.markdown(
     unsafe_allow_html=True
 )
 
-DATA_FILE = "market_data.csv"
 db_lock = threading.Lock()
 
 # --- SHARED STATE FOR STREAMLIT CONCURRENCY ---
@@ -128,7 +153,7 @@ class BackgroundState:
         self.latest_ce = 0.0
         self.latest_pe = 0.0
         
-        # Load existing history from Google Sheets (fallback to local CSV backup)
+        # Load existing history from Google Sheets
         loaded = False
         if GSHEET_EXPORT_URL:
             try:
@@ -138,15 +163,6 @@ class BackgroundState:
             except Exception as e:
                 print(f"Failed to load from Google Sheets: {e}")
                 
-        if not loaded:
-            if os.path.exists(DATA_FILE):
-                try:
-                    self.df = pd.read_csv(DATA_FILE).tail(3600)
-                    print(f"Loaded {len(self.df)} historical points from local CSV backup.")
-                    loaded = True
-                except Exception:
-                    pass
-                    
         if not loaded:
             self.df = pd.DataFrame(columns=['Time', 'Nifty_Spot', 'ATM_CE', 'ATM_PE'])
 
@@ -197,6 +213,10 @@ def get_spot_price(token):
             for k, v in data.items():
                 if "Nifty 50" in k:
                     return v.get('last_price')
+        elif response.status_code == 401:
+            state = get_shared_state_v2()
+            state.error = "❌ Upstox Access Token is expired or unauthorized! Please generate a new daily token and update your secrets."
+            print(f"[{datetime.now().strftime('%H:%M:%S')}] Auth Error: Token is expired or invalid (HTTP 401)")
         else:
             print(f"[{datetime.now().strftime('%H:%M:%S')}] Spot Error: HTTP {response.status_code} - {response.text}")
     except Exception as e:
@@ -239,6 +259,10 @@ def get_nearest_expiry_keys(token, atm_strike):
                         pe_key = c.get('instrument_key')
                         
             return nearest_expiry, ce_key, pe_key
+        elif response.status_code == 401:
+            state = get_shared_state_v2()
+            state.error = "❌ Upstox Access Token is expired or unauthorized! Please generate a new daily token and update your secrets."
+            print(f"[{datetime.now().strftime('%H:%M:%S')}] Auth Error: Token is expired or invalid (HTTP 401)")
         else:
             print(f"[{datetime.now().strftime('%H:%M:%S')}] Contracts Error: HTTP {response.status_code} - {response.text}")
     except Exception as e:
@@ -269,6 +293,10 @@ def get_option_prices(token, ce_key, pe_key):
                     pe_price = payload.get('last_price')
                     
             return ce_price, pe_price
+        elif response.status_code == 401:
+            state = get_shared_state_v2()
+            state.error = "❌ Upstox Access Token is expired or unauthorized! Please generate a new daily token and update your secrets."
+            print(f"[{datetime.now().strftime('%H:%M:%S')}] Auth Error: Token is expired or invalid (HTTP 401)")
         else:
             print(f"[{datetime.now().strftime('%H:%M:%S')}] Options Quote Error: HTTP {response.status_code} - {response.text}")
     except Exception as e:
@@ -336,7 +364,7 @@ def background_worker(token):
                         # Append to memory DataFrame, capped to last 3600 seconds (1 hour of detailed tick data)
                         state.df = pd.concat([state.df, new_row_df], ignore_index=True).tail(3600)
                         
-                        # Periodic write to Google Sheets and local backup every 10 seconds
+                        # Periodic write to Google Sheets every 10 seconds
                         now = time.time()
                         if now - last_csv_write_time >= 10:
                             if GSHEET_WEBAPP_URL:
@@ -352,12 +380,6 @@ def background_worker(token):
                                         print(f"[{datetime.now().strftime('%H:%M:%S')}] Google Sheets Connection Error: {e}")
                             else:
                                 pending_rows.clear()
-                                
-                            with db_lock:
-                                try:
-                                    state.df.to_csv(DATA_FILE, index=False)
-                                except Exception as e:
-                                    print(f"[{datetime.now().strftime('%H:%M:%S')}] Backup Save Error: {e}")
                             last_csv_write_time = now
                             
                             # Flat price check (120 consecutive 1-second points = closed / halted)
@@ -375,14 +397,18 @@ def background_worker(token):
                         state.last_update = current_time
                         state.error = None
                     else:
-                        state.error = "Error fetching CE/PE option premium prices"
+                        if not state.error or not state.error.startswith("❌"):
+                            state.error = "Error fetching CE/PE option premium prices"
                 else:
-                    state.error = f"Contract mapping failed for Strike {atm_strike}"
+                    if not state.error or not state.error.startswith("❌"):
+                        state.error = f"Contract mapping failed for Strike {atm_strike}"
             else:
-                state.error = "Nifty 50 spot price lookup failed"
+                if not state.error or not state.error.startswith("❌"):
+                    state.error = "Nifty 50 spot price lookup failed"
         except Exception as e:
             print(f"[{datetime.now().strftime('%H:%M:%S')}] Background Thread Loop Exception: {e}")
-            state.error = str(e)
+            if not state.error or not state.error.startswith("❌"):
+                state.error = str(e)
             
         # Poll interval is 1 second in background for high fidelity
         time.sleep(1)
@@ -443,6 +469,24 @@ with st.sidebar:
             """,
             unsafe_allow_html=True
         )
+        
+        st.markdown('<p style="font-size:12.5px;font-weight:700;color:#94a3b8;margin:18px 0 6px 0;text-transform:uppercase;letter-spacing:0.04em;">Auto Refresh Controls</p>', unsafe_allow_html=True)
+        pause_refresh = st.toggle(
+            "⏸️ Pause Chart Refresh", 
+            value=False, 
+            help="Pause auto-refreshing so you can draw trendlines, rectangles, pan, or zoom without resets. Background data logging remains active."
+        )
+        if not pause_refresh:
+            refresh_interval = st.slider(
+                "Refresh Interval (s)", 
+                min_value=1, 
+                max_value=20, 
+                value=3, 
+                step=1,
+                help="Set how frequently the page pulls the latest ticks."
+            )
+        else:
+            refresh_interval = 3
 
 # Render dashboard charts and metrics
 if not df.empty:
@@ -522,7 +566,6 @@ if not df.empty:
                 type='date',
                 tickformat='%H:%M',
                 hoverformat='%H:%M:%S',
-                dtick=180000, # 3 minutes in milliseconds
                 showgrid=True,
                 gridcolor='#1e2433',
                 zeroline=False,
@@ -546,14 +589,15 @@ if not df.empty:
                 spikedash="dash"
             ),
             hovermode="x unified",
-            margin=dict(l=40, r=80, t=10, b=40),
+            margin=dict(l=40, r=80, t=45, b=40),
             height=450
         )
         
         plotly_config = {
             'scrollZoom': True,
             'displaylogo': False,
-            'modeBarButtonsToAdd': ['drawline', 'drawrect', 'eraseshape']
+            'modeBarButtonsToAdd': ['drawline', 'drawrect', 'eraseshape'],
+            'displayModeBar': True
         }
         st.plotly_chart(fig_nifty, width='stretch', config=plotly_config, key="nifty_spot_chart")
         
@@ -671,7 +715,6 @@ if not df.empty:
                 type='date',
                 tickformat='%H:%M',
                 hoverformat='%H:%M:%S',
-                dtick=180000, # 3 minutes in milliseconds
                 showgrid=True,
                 gridcolor='#1e2433',
                 zeroline=False,
@@ -699,11 +742,11 @@ if not df.empty:
                 orientation="h", 
                 yanchor="bottom", 
                 y=1.02, 
-                xanchor="right", 
-                x=1,
+                xanchor="left", 
+                x=0.01,
                 bgcolor='rgba(0,0,0,0)'
             ),
-            margin=dict(l=40, r=80, t=10, b=40),
+            margin=dict(l=40, r=80, t=45, b=40),
             height=450
         )
         
@@ -724,9 +767,12 @@ else:
         unsafe_allow_html=True
     )
     
-# Sleep for 3 seconds, then rerun to pull the next update
-time.sleep(3)
-try:
-    st.rerun()
-except AttributeError:
-    st.experimental_rerun()
+# Sleep for refresh interval, then rerun to pull the next update
+if not pause_refresh:
+    time.sleep(refresh_interval)
+    try:
+        st.rerun()
+    except AttributeError:
+        st.experimental_rerun()
+else:
+    st.sidebar.info("⏸️ Auto-refresh is paused. You can now draw trendlines, zoom, and inspect without resets.")
