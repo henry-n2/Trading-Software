@@ -341,6 +341,8 @@ def background_worker(token):
                         ce_key = ck
                         pe_key = pk
                         expiry = exp
+                        # Clear memory DataFrame when strike changes to prevent cross-contract price cliffs
+                        state.df = pd.DataFrame(columns=['Time', 'Nifty_Spot', 'ATM_CE', 'ATM_PE'])
                 
                 if ce_key and pe_key:
                     ce_price, pe_price = get_option_prices(token, ce_key, pe_key)
@@ -491,291 +493,297 @@ with st.sidebar:
         else:
             refresh_interval = 3
 
-# Render dashboard charts and metrics
-if not df.empty:
-    # Convert Time column to datetime and clean NaTs to enable Plotly datetime axis auto-scaling
-    today_str = get_ist_now().strftime("%Y-%m-%d")
-    df['Datetime'] = pd.to_datetime(today_str + ' ' + df['Time'], errors='coerce')
-    df = df.dropna(subset=['Datetime'])
-    # Convert to standard space-separated string format YYYY-MM-DD HH:MM:SS for robust Plotly JS date-axis parsing
-    df['Datetime_Str'] = df['Datetime'].dt.strftime('%Y-%m-%d %H:%M:%S')
+plotly_config = {
+    'scrollZoom': True,
+    'displaylogo': False,
+    'modeBarButtonsToAdd': ['drawline', 'drawrect', 'eraseshape'],
+    'displayModeBar': True
+}
+
+# Create a permanent placeholder for the visual dashboard
+dashboard_placeholder = st.empty()
+
+# Run the live visual updates loop
+while True:
+    # Fetch the latest state inside the loop
+    state = get_shared_state_v2()
+    df = state.df.copy()
     
-    col1, col2 = st.columns(2)
-    
-    # --- LEFT SIDE: Nifty 50 Rate and Nifty-only Chart ---
-    with col1:
-        st.subheader("NIFTY 50 Spot")
-        
-        # Metric shows live 1s rate
-        live_spot = state.latest_spot if state.latest_spot > 0 else df['Nifty_Spot'].iloc[-1]
-        plotted_spot = df['Nifty_Spot'].iloc[-1]
-        
-        change = live_spot - plotted_spot
-        pct_change = (change / plotted_spot) * 100 if plotted_spot > 0 else 0.0
-        
-        st.metric(
-            label="NSE NIFTY 50 Live",
-            value=f"{live_spot:,.2f}",
-            delta=f"{change:+.2f} ({pct_change:+.2f}%) since last printed tick" if abs(change) > 0.01 else "Flat"
-        )
-        
-        # Graph of only Nifty 50 with gradient area fill
-        fig_nifty = go.Figure()
-        fig_nifty.add_trace(
-            go.Scatter(
-                x=df['Datetime_Str'].tolist(), 
-                y=df['Nifty_Spot'], 
-                name="NIFTY 50", 
-                line=dict(color='#F4D03F', width=2),
-                mode='lines'
+    with dashboard_placeholder.container():
+        if not df.empty:
+            # Convert Time column to datetime and clean NaTs to enable Plotly datetime axis auto-scaling
+            today_str = get_ist_now().strftime("%Y-%m-%d")
+            df['Datetime'] = pd.to_datetime(today_str + ' ' + df['Time'], errors='coerce')
+            df = df.dropna(subset=['Datetime'])
+            # Convert to standard space-separated string format YYYY-MM-DD HH:MM:SS for robust Plotly JS date-axis parsing
+            df['Datetime_Str'] = df['Datetime'].dt.strftime('%Y-%m-%d %H:%M:%S')
+            
+            col1, col2 = st.columns(2)
+            
+            # --- LEFT SIDE: Nifty 50 Rate and Nifty-only Chart ---
+            with col1:
+                st.subheader("NIFTY 50 Spot")
+                
+                # Metric shows live 1s rate
+                live_spot = state.latest_spot if state.latest_spot > 0 else df['Nifty_Spot'].iloc[-1]
+                plotted_spot = df['Nifty_Spot'].iloc[-1]
+                
+                change = live_spot - plotted_spot
+                pct_change = (change / plotted_spot) * 100 if plotted_spot > 0 else 0.0
+                
+                st.metric(
+                    label="NSE NIFTY 50 Live",
+                    value=f"{live_spot:,.2f}",
+                    delta=f"{change:+.2f} ({pct_change:+.2f}%) since last printed tick" if abs(change) > 0.01 else "Flat"
+                )
+                
+                # Graph of only Nifty 50 with gradient area fill
+                fig_nifty = go.Figure()
+                fig_nifty.add_trace(
+                    go.Scatter(
+                        x=df['Datetime_Str'].tolist(), 
+                        y=df['Nifty_Spot'], 
+                        name="NIFTY 50", 
+                        line=dict(color='#F4D03F', width=2),
+                        mode='lines'
+                    )
+                )
+                
+                # Add horizontal dashed line at latest spot price (Kite style)
+                fig_nifty.add_shape(
+                    type="line",
+                    x0=df['Datetime_Str'].iloc[0],
+                    y0=live_spot,
+                    x1=df['Datetime_Str'].iloc[-1],
+                    y1=live_spot,
+                    line=dict(color='#F4D03F', width=1.5, dash="dash"),
+                )
+                
+                # Add price badge on the right margin (Kite style)
+                fig_nifty.add_annotation(
+                    x=df['Datetime_Str'].iloc[-1],
+                    y=live_spot,
+                    text=f"{live_spot:,.2f}",
+                    showarrow=False,
+                    xanchor="left",
+                    yanchor="middle",
+                    font=dict(color="black", size=9, weight="bold"),
+                    bgcolor='#F4D03F',
+                    bordercolor='#F4D03F',
+                    borderwidth=1,
+                    borderpad=3,
+                    align="left"
+                )
+                
+                fig_nifty.update_layout(
+                    plot_bgcolor='#0d0f12',
+                    paper_bgcolor='#0d0f12',
+                    font=dict(family='Inter, sans-serif', color='#e2e8f0'),
+                    dragmode='pan',
+                    uirevision='nifty_spot',
+                    xaxis=dict(
+                        title="Time",
+                        type='date',
+                        tickformat='%H:%M',
+                        hoverformat='%H:%M:%S',
+                        showgrid=True,
+                        gridcolor='#1e2433',
+                        zeroline=False,
+                        showspikes=True,
+                        spikesnap="data",
+                        spikemode="across",
+                        spikethickness=1,
+                        spikecolor="#2c354d",
+                        spikedash="dash"
+                    ),
+                    yaxis=dict(
+                        title="Spot Price (INR)",
+                        showgrid=True,
+                        gridcolor='#1e2433',
+                        zeroline=False,
+                        showspikes=True,
+                        spikesnap="data",
+                        spikemode="across",
+                        spikethickness=1,
+                        spikecolor="#2c354d",
+                        spikedash="dash"
+                    ),
+                    hovermode="x unified",
+                    margin=dict(l=40, r=80, t=45, b=40),
+                    height=450
+                )
+                
+                st.plotly_chart(fig_nifty, width='stretch', config=plotly_config, key="nifty_spot_chart")
+                
+            # --- RIGHT SIDE: Option Premium Crossover ---
+            with col2:
+                st.subheader("ATM Call & Put Crossover")
+                
+                # Metrics show live 1s rates
+                live_ce = state.latest_ce if state.latest_ce > 0 else df['ATM_CE'].iloc[-1]
+                plotted_ce = df['ATM_CE'].iloc[-1]
+                change_ce = live_ce - plotted_ce
+                
+                live_pe = state.latest_pe if state.latest_pe > 0 else df['ATM_PE'].iloc[-1]
+                plotted_pe = df['ATM_PE'].iloc[-1]
+                change_pe = live_pe - plotted_pe
+                
+                subcol1, subcol2 = st.columns(2)
+                with subcol1:
+                    st.metric(
+                        label=f"Call Premium (CE) - {state.atm_strike}",
+                        value=f"₹{live_ce:,.2f}",
+                        delta=f"{change_ce:+.2f} since last printed tick" if abs(change_ce) > 0.01 else "Flat"
+                    )
+                with subcol2:
+                    st.metric(
+                        label=f"Put Premium (PE) - {state.atm_strike}",
+                        value=f"₹{live_pe:,.2f}",
+                        delta=f"{change_pe:+.2f} since last printed tick" if abs(change_pe) > 0.01 else "Flat"
+                    )
+                
+                # Options-only crossover graph with gradient area fills
+                fig_options = go.Figure()
+                fig_options.add_trace(
+                    go.Scatter(
+                        x=df['Datetime_Str'].tolist(), 
+                        y=df['ATM_CE'], 
+                        name="ATM CALL (CE)", 
+                        line=dict(color='#2ECC71', width=2),
+                        fill='tozeroy',
+                        fillcolor='rgba(46, 204, 113, 0.04)',
+                        mode='lines'
+                    )
+                )
+                fig_options.add_trace(
+                    go.Scatter(
+                        x=df['Datetime_Str'].tolist(), 
+                        y=df['ATM_PE'], 
+                        name="ATM PUT (PE)", 
+                        line=dict(color='#E74C3C', width=2),
+                        fill='tozeroy',
+                        fillcolor='rgba(231, 76, 60, 0.04)',
+                        mode='lines'
+                    )
+                )
+                
+                # Add horizontal dashed line at latest Call price
+                fig_options.add_shape(
+                    type="line",
+                    x0=df['Datetime_Str'].iloc[0],
+                    y0=live_ce,
+                    x1=df['Datetime_Str'].iloc[-1],
+                    y1=live_ce,
+                    line=dict(color='#2ECC71', width=1.5, dash="dash"),
+                )
+                
+                # Add Call price badge on the right margin
+                fig_options.add_annotation(
+                    x=df['Datetime_Str'].iloc[-1],
+                    y=live_ce,
+                    text=f"CE: {live_ce:,.2f}",
+                    showarrow=False,
+                    xanchor="left",
+                    yanchor="middle",
+                    font=dict(color="white", size=9, weight="bold"),
+                    bgcolor='#2ECC71',
+                    bordercolor='#2ECC71',
+                    borderwidth=1,
+                    borderpad=3,
+                    align="left"
+                )
+                
+                # Add horizontal dashed line at latest Put price
+                fig_options.add_shape(
+                    type="line",
+                    x0=df['Datetime_Str'].iloc[0],
+                    y0=live_pe,
+                    x1=df['Datetime_Str'].iloc[-1],
+                    y1=live_pe,
+                    line=dict(color='#E74C3C', width=1.5, dash="dash"),
+                )
+                
+                # Add Put price badge on the right margin
+                fig_options.add_annotation(
+                    x=df['Datetime_Str'].iloc[-1],
+                    y=live_pe,
+                    text=f"PE: {live_pe:,.2f}",
+                    showarrow=False,
+                    xanchor="left",
+                    yanchor="middle",
+                    font=dict(color="white", size=9, weight="bold"),
+                    bgcolor='#E74C3C',
+                    bordercolor='#E74C3C',
+                    borderwidth=1,
+                    borderpad=3,
+                    align="left"
+                )
+                
+                fig_options.update_layout(
+                    plot_bgcolor='#0d0f12',
+                    paper_bgcolor='#0d0f12',
+                    font=dict(family='Inter, sans-serif', color='#e2e8f0'),
+                    dragmode='pan',
+                    uirevision='options_crossover',
+                    xaxis=dict(
+                        title="Time",
+                        type='date',
+                        tickformat='%H:%M',
+                        hoverformat='%H:%M:%S',
+                        showgrid=True,
+                        gridcolor='#1e2433',
+                        zeroline=False,
+                        showspikes=True,
+                        spikesnap="data",
+                        spikemode="across",
+                        spikethickness=1,
+                        spikecolor="#2c354d",
+                        spikedash="dash"
+                    ),
+                    yaxis=dict(
+                        title="Option Price (₹)",
+                        showgrid=True,
+                        gridcolor='#1e2433',
+                        zeroline=False,
+                        showspikes=True,
+                        spikesnap="data",
+                        spikemode="across",
+                        spikethickness=1,
+                        spikecolor="#2c354d",
+                        spikedash="dash"
+                    ),
+                    hovermode="x unified",
+                    legend=dict(
+                        orientation="h", 
+                        yanchor="bottom", 
+                        y=1.02, 
+                        xanchor="left", 
+                        x=0.01,
+                        bgcolor='rgba(0,0,0,0)'
+                    ),
+                    margin=dict(l=40, r=80, t=45, b=40),
+                    height=450
+                )
+                
+                st.plotly_chart(fig_options, width='stretch', config=plotly_config, key="options_crossover_chart")
+        else:
+            st.markdown(
+                """
+                <div style="background-color:#141822; padding:30px; border-radius:12px; border:1px solid #1e2433; text-align:center;">
+                    <h3 style="color:#ffffff; margin:0 0 10px 0;">🔄 Synchronizing Market Database...</h3>
+                    <p style="color:#8f929d; margin:0 0 15px 0; font-size:14.5px;">
+                        The background engine is currently querying live quotes and establishing the history.
+                    </p>
+                    <p style="color:#f59e0b; margin:0; font-size:13px; font-weight:600;">
+                        Note: Live data collection runs every second in the background. Hover gridlines will adjust automatically to spacing on zooming.
+                    </p>
+                </div>
+                """,
+                unsafe_allow_html=True
             )
-        )
-        
-        # Add horizontal dashed line at latest spot price (Kite style)
-        fig_nifty.add_shape(
-            type="line",
-            x0=df['Datetime_Str'].iloc[0],
-            y0=live_spot,
-            x1=df['Datetime_Str'].iloc[-1],
-            y1=live_spot,
-            line=dict(color='#F4D03F', width=1.5, dash="dash"),
-        )
-        
-        # Add price badge on the right margin (Kite style)
-        fig_nifty.add_annotation(
-            x=df['Datetime_Str'].iloc[-1],
-            y=live_spot,
-            text=f"{live_spot:,.2f}",
-            showarrow=False,
-            xanchor="left",
-            yanchor="middle",
-            font=dict(color="black", size=9, weight="bold"),
-            bgcolor='#F4D03F',
-            bordercolor='#F4D03F',
-            borderwidth=1,
-            borderpad=3,
-            align="left"
-        )
-        
-        fig_nifty.update_layout(
-            plot_bgcolor='#0d0f12',
-            paper_bgcolor='#0d0f12',
-            font=dict(family='Inter, sans-serif', color='#e2e8f0'),
-            dragmode='pan',
-            uirevision='nifty_spot',
-            xaxis=dict(
-                title="Time",
-                type='date',
-                tickformat='%H:%M',
-                hoverformat='%H:%M:%S',
-                showgrid=True,
-                gridcolor='#1e2433',
-                zeroline=False,
-                showspikes=True,
-                spikesnap="data",
-                spikemode="across",
-                spikethickness=1,
-                spikecolor="#2c354d",
-                spikedash="dash"
-            ),
-            yaxis=dict(
-                title="Spot Price (INR)",
-                showgrid=True,
-                gridcolor='#1e2433',
-                zeroline=False,
-                showspikes=True,
-                spikesnap="data",
-                spikemode="across",
-                spikethickness=1,
-                spikecolor="#2c354d",
-                spikedash="dash"
-            ),
-            hovermode="x unified",
-            margin=dict(l=40, r=80, t=45, b=40),
-            height=450
-        )
-        
-        plotly_config = {
-            'scrollZoom': True,
-            'displaylogo': False,
-            'modeBarButtonsToAdd': ['drawline', 'drawrect', 'eraseshape'],
-            'displayModeBar': True
-        }
-        st.plotly_chart(fig_nifty, width='stretch', config=plotly_config, key="nifty_spot_chart")
-        
-    # --- RIGHT SIDE: Option Premium Crossover ---
-    with col2:
-        st.subheader("ATM Call & Put Crossover")
-        
-        # Metrics show live 1s rates
-        live_ce = state.latest_ce if state.latest_ce > 0 else df['ATM_CE'].iloc[-1]
-        plotted_ce = df['ATM_CE'].iloc[-1]
-        change_ce = live_ce - plotted_ce
-        
-        live_pe = state.latest_pe if state.latest_pe > 0 else df['ATM_PE'].iloc[-1]
-        plotted_pe = df['ATM_PE'].iloc[-1]
-        change_pe = live_pe - plotted_pe
-        
-        subcol1, subcol2 = st.columns(2)
-        with subcol1:
-            st.metric(
-                label=f"Call Premium (CE) - {state.atm_strike}",
-                value=f"₹{live_ce:,.2f}",
-                delta=f"{change_ce:+.2f} since last printed tick" if abs(change_ce) > 0.01 else "Flat"
-            )
-        with subcol2:
-            st.metric(
-                label=f"Put Premium (PE) - {state.atm_strike}",
-                value=f"₹{live_pe:,.2f}",
-                delta=f"{change_pe:+.2f} since last printed tick" if abs(change_pe) > 0.01 else "Flat"
-            )
-        
-        # Options-only crossover graph with gradient area fills
-        fig_options = go.Figure()
-        fig_options.add_trace(
-            go.Scatter(
-                x=df['Datetime_Str'].tolist(), 
-                y=df['ATM_CE'], 
-                name="ATM CALL (CE)", 
-                line=dict(color='#2ECC71', width=2),
-                fill='tozeroy',
-                fillcolor='rgba(46, 204, 113, 0.04)',
-                mode='lines'
-            )
-        )
-        fig_options.add_trace(
-            go.Scatter(
-                x=df['Datetime_Str'].tolist(), 
-                y=df['ATM_PE'], 
-                name="ATM PUT (PE)", 
-                line=dict(color='#E74C3C', width=2),
-                fill='tozeroy',
-                fillcolor='rgba(231, 76, 60, 0.04)',
-                mode='lines'
-            )
-        )
-        
-        # Add horizontal dashed line at latest Call price
-        fig_options.add_shape(
-            type="line",
-            x0=df['Datetime_Str'].iloc[0],
-            y0=live_ce,
-            x1=df['Datetime_Str'].iloc[-1],
-            y1=live_ce,
-            line=dict(color='#2ECC71', width=1.5, dash="dash"),
-        )
-        
-        # Add Call price badge on the right margin
-        fig_options.add_annotation(
-            x=df['Datetime_Str'].iloc[-1],
-            y=live_ce,
-            text=f"CE: {live_ce:,.2f}",
-            showarrow=False,
-            xanchor="left",
-            yanchor="middle",
-            font=dict(color="white", size=9, weight="bold"),
-            bgcolor='#2ECC71',
-            bordercolor='#2ECC71',
-            borderwidth=1,
-            borderpad=3,
-            align="left"
-        )
-        
-        # Add horizontal dashed line at latest Put price
-        fig_options.add_shape(
-            type="line",
-            x0=df['Datetime_Str'].iloc[0],
-            y0=live_pe,
-            x1=df['Datetime_Str'].iloc[-1],
-            y1=live_pe,
-            line=dict(color='#E74C3C', width=1.5, dash="dash"),
-        )
-        
-        # Add Put price badge on the right margin
-        fig_options.add_annotation(
-            x=df['Datetime_Str'].iloc[-1],
-            y=live_pe,
-            text=f"PE: {live_pe:,.2f}",
-            showarrow=False,
-            xanchor="left",
-            yanchor="middle",
-            font=dict(color="white", size=9, weight="bold"),
-            bgcolor='#E74C3C',
-            bordercolor='#E74C3C',
-            borderwidth=1,
-            borderpad=3,
-            align="left"
-        )
-        
-        fig_options.update_layout(
-            plot_bgcolor='#0d0f12',
-            paper_bgcolor='#0d0f12',
-            font=dict(family='Inter, sans-serif', color='#e2e8f0'),
-            dragmode='pan',
-            uirevision='options_crossover',
-            xaxis=dict(
-                title="Time",
-                type='date',
-                tickformat='%H:%M',
-                hoverformat='%H:%M:%S',
-                showgrid=True,
-                gridcolor='#1e2433',
-                zeroline=False,
-                showspikes=True,
-                spikesnap="data",
-                spikemode="across",
-                spikethickness=1,
-                spikecolor="#2c354d",
-                spikedash="dash"
-            ),
-            yaxis=dict(
-                title="Option Price (₹)",
-                showgrid=True,
-                gridcolor='#1e2433',
-                zeroline=False,
-                showspikes=True,
-                spikesnap="data",
-                spikemode="across",
-                spikethickness=1,
-                spikecolor="#2c354d",
-                spikedash="dash"
-            ),
-            hovermode="x unified",
-            legend=dict(
-                orientation="h", 
-                yanchor="bottom", 
-                y=1.02, 
-                xanchor="left", 
-                x=0.01,
-                bgcolor='rgba(0,0,0,0)'
-            ),
-            margin=dict(l=40, r=80, t=45, b=40),
-            height=450
-        )
-        
-        st.plotly_chart(fig_options, width='stretch', config=plotly_config, key="options_crossover_chart")
-else:
-    st.markdown(
-        """
-        <div style="background-color:#141822; padding:30px; border-radius:12px; border:1px solid #1e2433; text-align:center;">
-            <h3 style="color:#ffffff; margin:0 0 10px 0;">🔄 Synchronizing Market Database...</h3>
-            <p style="color:#8f929d; margin:0 0 15px 0; font-size:14.5px;">
-                The background engine is currently querying live quotes and establishing the history.
-            </p>
-            <p style="color:#f59e0b; margin:0; font-size:13px; font-weight:600;">
-                Note: Live data collection runs every second in the background. Hover gridlines will adjust automatically to spacing on zooming.
-            </p>
-        </div>
-        """,
-        unsafe_allow_html=True
-    )
-    
-# Sleep for refresh interval, then rerun to pull the next update
-if not pause_refresh:
-    time.sleep(refresh_interval)
-    try:
-        st.rerun()
-    except AttributeError:
-        st.experimental_rerun()
-else:
-    st.sidebar.info("⏸️ Auto-refresh is paused. You can now draw trendlines, zoom, and inspect without resets.")
+            
+    # Sleep interval control (respecting the sidebar pause toggle)
+    if pause_refresh:
+        time.sleep(1)
+    else:
+        time.sleep(refresh_interval)
