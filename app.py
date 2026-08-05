@@ -417,10 +417,10 @@ with st.sidebar:
 
 # Render dashboard charts and metrics
 if not df.empty:
-    # Convert Time column to datetime and format as ISO 8601 strings for Plotly JS compatibility
+    # Convert Time column to datetime and clean NaTs to enable Plotly datetime axis auto-scaling
     today_str = datetime.now().strftime("%Y-%m-%d")
-    datetime_series = pd.to_datetime(today_str + ' ' + df['Time'], errors='coerce')
-    df['Datetime'] = datetime_series.dt.strftime('%Y-%m-%dT%H:%M:%S')
+    df['Datetime'] = pd.to_datetime(today_str + ' ' + df['Time'], errors='coerce')
+    df = df.dropna(subset=['Datetime'])
     
     col1, col2 = st.columns(2)
     
